@@ -1,0 +1,116 @@
+---
+title: "Problem Set 2"
+author: "Ryder Rogers"
+date: today
+format:
+  html:
+    toc: true
+    embed-resources: true
+---
+
+\*\*GitHub repo:\*\* \<<https://github.com/ryder-rogers/ec422_ps2_rogers.git>\>
+
+## 
+
+```{r}
+#| echo: false
+#| message: false
+library(tidyverse)
+library(knitr)
+```
+
+\## Data
+
+Monthly seasonally adjusted unemployment rates for the US, Oregon, California, Texas, and New York from FRED, January 1976 to the most recent month.
+
+```{r}
+unemp_raw <- read_rds("data/unemp_raw.rds")
+head(unemp_raw)
+```
+
+\## Wrangling
+
+```{r}
+unemp <- unemp_raw |>
+  rename(unemployment_rate = price) |>
+  mutate(region = case_when(
+    symbol == "UNRATE" ~ "United States",
+    symbol == "ORUR" ~ "Oregon",
+    symbol == "CAUR" ~ "California",
+    symbol == "TXUR" ~ "Texas",
+    symbol == "NYUR" ~ "New York"
+  )) |>
+  arrange(region, date) |>
+  group_by(region) |>
+  mutate(
+    unemployment_rate = replace(unemployment_rate, date == as.Date("2025-10-01"),
+                                unemployment_rate[date == as.Date("2025-09-01")]),
+    unemployment_rate_change = unemployment_rate - lag(unemployment_rate)
+  ) |>
+  ungroup()
+
+unemp_recent <- filter(unemp, date >= as.Date("2015-01-01"))
+
+unemp_summary <- unemp |>
+  group_by(region) |>
+  summarize(mean_rate = mean(unemployment_rate, na.rm = TRUE),
+            min_rate = min(unemployment_rate, na.rm = TRUE),
+            max_rate = max(unemployment_rate, na.rm = TRUE))
+
+unemp_recent_summary <- unemp_recent |>
+  group_by(region) |>
+  summarize(mean_rate = mean(unemployment_rate, na.rm = TRUE),
+            min_rate = min(unemployment_rate, na.rm = TRUE),
+            max_rate = max(unemployment_rate, na.rm = TRUE))
+
+unemp_no_covid <- filter(unemp, year(date) != 2020)
+unemp_top_increases_no_covid <- slice_max(unemp_no_covid, unemployment_rate_change, n = 5)
+unemp_top_decreases_no_covid <- slice_min(unemp_no_covid, unemployment_rate_change, n = 5)
+
+kable(unemp_summary, digits = 2, caption = "Mean, min, and max unemployment rate (%) by region, 1976-present")
+kable(unemp_recent_summary, digits = 2, caption = "Mean, min, and max unemployment rate (%) by region, 2015-present")
+kable(unemp_top_increases_no_covid, digits = 2, caption = "Five largest month-over-month increases, excluding 2020")
+kable(unemp_top_decreases_no_covid, digits = 2, caption = "Five largest month-over-month decreases, excluding 2020")
+```
+
+\## Visualization
+
+```{r}
+ggplot(unemp, aes(x = date, y = unemployment_rate, color = region)) +
+  geom_line() +
+  labs(title = "Unemployment Rate by Region, 1976-Present", x = "Date", y = "Unemployment Rate (%)", color = "Region") +
+  theme_minimal()
+
+ggplot(unemp, aes(x = date, y = unemployment_rate)) +
+  geom_line() +
+  facet_wrap(~ region) +
+  labs(title = "Unemployment Rate by Region, 1976-Present", x = "Date", y = "Unemployment Rate (%)") +
+  theme_minimal()
+
+ggplot(unemp_summary, aes(x = fct_reorder(region, mean_rate), y = mean_rate)) +
+  geom_col() +
+  labs(title = "Average Unemployment Rate by Region, 1976-Present", x = "Region", y = "Average Unemployment Rate (%)") +
+  theme_minimal()
+
+us <- unemp |>
+  filter(region == "United States") |>
+  select(date, us_rate = unemployment_rate)
+
+states <- unemp |>
+  filter(region != "United States") |>
+  left_join(us, by = "date") |>
+  mutate(diff = unemployment_rate - us_rate)
+
+ggplot(states, aes(x = date, y = diff, color = region)) +
+  geom_line() +
+  geom_hline(yintercept = 0) +
+  labs(title = "State Unemployment Rate Minus US Rate", x = "Date", y = "Difference (percentage points)", color = "State") +
+  theme_minimal()
+
+```
+
+## 
+
+##Reflection
+
+The dplyr part was pretty straightforward once I figured out what went in each blank, since most of it was just renaming, filtering, and grouping. What tripped me up the most was Git, because when I tried to connect my repo to GitHub it said “remote origin already exists” and I had to use git remote set-url to fix it. I also had trouble getting the data to load at first because I hadn’t run the download step that creates the .rds file yet, and I used AI chat help to figure out both of these problems. Now I feel much more comfortable with committing and pushing my work to GitHub.
